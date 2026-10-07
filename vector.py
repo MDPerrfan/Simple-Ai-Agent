@@ -33,5 +33,10 @@ if add_documents:
     vector_store.add_documents(documents=documents, ids=ids)
 
 retriever = vector_store.as_retriever(
-    search_kwargs={"k": 5}
+    search_type="mmr",
+    search_kwargs={
+        "k": 5,
+        "fetch_k": 15,
+        "lambda_mult": 0.7
+    }
 )
