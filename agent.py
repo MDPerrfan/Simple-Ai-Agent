@@ -7,7 +7,7 @@ from restaurant_tools import (
     get_location_coordinates,
     find_restaurants
 )
-
+from config import AGENT_INFO
 
 # ==========================================
 # MODEL
@@ -36,8 +36,96 @@ class AgentState(TypedDict, total=False):
 
     restaurants: list
 
+    intent: str
+
     answer: str
 
+
+def route_intent(state: AgentState):
+
+    question = state["question"].lower().strip()
+
+    # ------------------------------------------
+    # 1. Obvious questions about the assistant
+    # ------------------------------------------
+
+    about_patterns = [
+        "who are you",
+        "what are you",
+        "who built you",
+        "who made you",
+        "who created you",
+        "who developed you",
+        "your creator",
+        "your developer",
+        "your purpose",
+        "what do you do",
+        "how do you work",
+        "what data do you use",
+        "data source"
+    ]
+
+    if any(pattern in question for pattern in about_patterns):
+        print("\nIntent: about_agent")
+        return {"intent": "about_agent"}
+
+    # ------------------------------------------
+    # 2. Obvious restaurant-related questions
+    # ------------------------------------------
+
+    restaurant_words = [
+        "restaurant",
+        "restaurants",
+        "food",
+        "eat",
+        "dining",
+        "cuisine",
+        "pizza",
+        "burger",
+        "cafe",
+        "coffee",
+        "breakfast",
+        "lunch",
+        "dinner"
+    ]
+
+    if any(word in question for word in restaurant_words):
+        print("\nIntent: restaurant_search")
+        return {"intent": "restaurant_search"}
+
+    # ------------------------------------------
+    # 3. Ambiguous request → ask LLM
+    # ------------------------------------------
+
+    prompt = f"""
+Classify this message.
+
+Message:
+{state["question"]}
+
+Choose exactly one:
+
+restaurant_search
+about_agent
+general
+
+Return ONLY the category.
+"""
+
+    response = model.invoke(prompt)
+
+    intent = response.content.strip().lower()
+
+    if intent not in {
+        "restaurant_search",
+        "about_agent",
+        "general"
+    }:
+        intent = "general"
+
+    print(f"\nIntent: {intent}")
+
+    return {"intent": intent}
 # ==========================================
 # NODE 1: UNDERSTAND USER REQUEST
 # ==========================================
@@ -83,7 +171,44 @@ Rules:
 
     return data
 
+def answer_about_agent(state: AgentState):
 
+    prompt = f"""
+You are {AGENT_INFO["name"]}.
+
+Creator: {AGENT_INFO["creator"]}
+
+Purpose:
+{AGENT_INFO["purpose"]}
+
+Data source:
+{AGENT_INFO["data_source"]}
+
+Limitations:
+{AGENT_INFO["limitations"]}
+
+User asked:
+{state["question"]}
+
+Answer naturally and concisely.
+
+Use ONLY the information above.
+Do not invent information about yourself or your creator.
+"""
+
+    response = model.invoke(prompt)
+
+    return {"answer": response.content}
+
+def answer_general(state: AgentState):
+
+    return {
+        "answer": (
+            "I'm an AI Dining Assistant focused on restaurant "
+            "discovery and dining-related questions. Ask me to find "
+            "restaurants by location, cuisine, or opening preference."
+        )
+    }
 # ==========================================
 # NODE 2: GEOCODE
 # ==========================================
@@ -236,6 +361,9 @@ Rules:
 # ==========================================
 
 builder = StateGraph(AgentState)
+builder.add_node("route_intent", route_intent)
+builder.add_node("answer_about_agent", answer_about_agent)
+builder.add_node("answer_general", answer_general)
 
 builder.add_node("understand_request", understand_request)
 builder.add_node("geocode_location", geocode_location)
@@ -245,7 +373,30 @@ builder.add_node(
     recommend_restaurants
 )
 
-builder.add_edge(START, "understand_request")
+builder.add_edge(START, "route_intent")
+def choose_path(state: AgentState):
+
+    if state["intent"] == "restaurant_search":
+        return "restaurant"
+
+    if state["intent"] == "about_agent":
+        return "about"
+
+    return "general"
+
+
+builder.add_conditional_edges(
+    "route_intent",
+    choose_path,
+    {
+        "restaurant": "understand_request",
+        "about": "answer_about_agent",
+        "general": "answer_general"
+    }
+)
+
+builder.add_edge("answer_about_agent", END)
+builder.add_edge("answer_general", END)
 builder.add_edge("understand_request", "geocode_location")
 
 builder.add_node(
