@@ -25,7 +25,6 @@ model = ChatOllama(
 
 class AgentState(TypedDict, total=False):
     question: str
-
     place_name: str
     cuisine: str
     preference: str
@@ -33,12 +32,12 @@ class AgentState(TypedDict, total=False):
 
     latitude: float
     longitude: float
-
     restaurants: list
 
     intent: str
-
     answer: str
+    use_coordinates: bool
+
 
 
 def route_intent(state: AgentState):
@@ -415,8 +414,43 @@ builder.add_edge(
     "recommend_restaurants",
     END
 )
+
 restaurant_graph = builder.compile()
 
+def search_nearby(latitude: float, longitude: float, radius: int = 1000):
+
+    # Safety limits
+    latitude = max(-90, min(90, latitude))
+    longitude = max(-180, min(180, longitude))
+    radius = max(100, min(5000, radius))
+
+    # Search directly — no geocoding
+    restaurants = find_restaurants.invoke({
+        "latitude": latitude,
+        "longitude": longitude,
+        "radius": radius
+    })
+
+    print(f"\nFound {len(restaurants)} nearby restaurants.")
+
+    # For nearby search we don't filter by cuisine yet
+    state = {
+        "question": "Recommend good restaurants near my current location.",
+        "restaurants": restaurants,
+        "cuisine": "any",
+        "preference": "none"
+    }
+
+    filtered = filter_restaurants(state)
+
+    state["restaurants"] = filtered["restaurants"]
+
+    recommendation = recommend_restaurants(state)
+
+    return {
+        "answer": recommendation["answer"],
+        "restaurants": state["restaurants"]
+    }
 # ==========================================
 # TEST
 # ==========================================

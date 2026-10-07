@@ -46,35 +46,83 @@ function App() {
   }, [messages, loading]);
 
   const findNearbyRestaurants = () => {
-    if (!navigator.geolocation) {
-      alert("Location services are not supported by your browser.");
-      return;
-    }
+  if (!navigator.geolocation) {
+    alert("Location is not supported by your browser.");
+    return;
+  }
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const { latitude, longitude } = position.coords;
 
-        sendMessage(
-          `Find good restaurants near latitude ${latitude} and longitude ${longitude}`
+      const message = "Find restaurants near my current location";
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "user",
+          content: "📍 Find restaurants near me",
+        },
+      ]);
+
+      setLoading(true);
+
+      try {
+        const response = await fetch(
+          "http://127.0.0.1:8000/chat",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+
+            body: JSON.stringify({
+              message,
+              latitude,
+              longitude,
+            }),
+          }
         );
-      },
 
-      (error) => {
-        console.error(error);
+        const data = await response.json();
 
-        alert(
-          "I couldn't access your location. Please allow location access or type your city/area."
-        );
-      },
-
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 300000,
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content:
+              data.answer ||
+              data.error ||
+              "I couldn't find nearby restaurants.",
+          },
+        ]);
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content:
+              "I couldn't connect to the dining service.",
+          },
+        ]);
+      } finally {
+        setLoading(false);
       }
-    );
-  };
+    },
+
+    () => {
+      alert(
+        "Location access was denied. You can type your city or area instead."
+      );
+    },
+
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 300000,
+    }
+  );
+};
 
   const sendMessage = async (text = input) => {
     const message = text.trim();

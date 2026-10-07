@@ -19,10 +19,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# Expected request format
 class ChatRequest(BaseModel):
     message: str
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 # Simple health check
@@ -39,15 +39,30 @@ def home():
 def chat(request: ChatRequest):
 
     try:
-        result = restaurant_graph.invoke({
-            "question": request.message
-        })
+
+        # Current-location search
+        if (
+            request.latitude is not None
+            and request.longitude is not None
+        ):
+            from agent import search_nearby
+
+            result = search_nearby(
+                latitude=request.latitude,
+                longitude=request.longitude
+            )
+
+        # Normal natural-language request
+        else:
+            result = restaurant_graph.invoke({
+                "question": request.message
+            })
 
         return {
             "answer": result["answer"]
         }
 
-    except Exception as e:
+    except Exception:
         return {
-            "error": str(e)
+            "error": "Unable to process your request right now."
         }
